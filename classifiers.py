@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.special import logsumexp
 from scipy.optimize import fmin_l_bfgs_b
+from scipy.spatial import distance_matrix
 
 
 def loglikelihood(mu: np.ndarray, sigma: np.ndarray, X: np.ndarray) -> np.ndarray:
@@ -67,3 +68,65 @@ class LogisticRegression:
         predictions = np.zeros((data.shape[0],), dtype=np.int32)
         predictions[data @ self._w + self._b > 0] = 1
         return predictions
+
+
+class SVM:
+    support_vectors: np.ndarray
+    alpha_z_sv: np.ndarray
+
+    def __init__(self, C: float, kernel=None):
+        self.C = C
+        if kernel is None:
+            self.kernel = SVM.LinearKernel(1).kernel_function
+        else:
+            self.kernel = kernel.kernel_function
+
+    def fit(self, data: np.ndarray, labels: np.ndarray):
+
+        (N, D) = data.shape
+        z = labels * 2 - 1
+        H = self.kernel(data, data) * np.outer(z, z)
+
+        alpha, t, _ = fmin_l_bfgs_b(lambda alpha: self.obj_func(H, alpha),
+                                    x0=np.zeros((N,)),
+                                    bounds=[(0, self.C)] * N,
+                                    factr=1)
+
+        sv_idxs = alpha > 1e-9
+        self.support_vectors = data[sv_idxs, :]
+        self.alpha_z_sv = alpha[sv_idxs] * z[sv_idxs]
+
+    @staticmethod
+    def obj_func(H, alpha):
+        loss = 1 / 2 * alpha.T @ H @ alpha - sum(alpha)
+        delta_loss = H @ alpha - 1
+        return loss, delta_loss
+
+    def predict(self, data):
+        predictions = np.zeros((data.shape[0],), dtype=np.int32)
+        predictions[self.kernel(data, self.support_vectors) @ self.alpha_z_sv > 0] = 1
+        return predictions
+
+    class LinearKernel:
+        def __init__(self, xi: float = 1):
+            self.xi = xi
+
+        def kernel_function(self, X_1: np.ndarray, X_2: np.ndarray) -> np.ndarray:
+            return X_1 @ X_2.T + self.xi
+
+    class PolynomialKernel:
+        def __init__(self, c: float, d: float, xi: float):
+            self.c = c
+            self.d = d
+            self.xi = xi
+
+        def kernel_function(self, X_1: np.ndarray, X_2: np.ndarray) -> np.ndarray:
+            return ((X_1 @ X_2.T) + self.c) ** self.d + self.xi
+
+    class GaussianKernel:
+        def __init__(self, g: float, xi: float):
+            self.g = g
+            self.xi = xi
+
+        def kernel_function(self, X_1: np.ndarray, X_2: np.ndarray) -> np.ndarray:
+            return np.exp(-self.g * distance_matrix(X_1, X_2) ** 2) + self.xi

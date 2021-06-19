@@ -4,16 +4,10 @@ from typing import List, Any, Union, Tuple, Optional
 
 import numpy as np
 from scipy.linalg import eigh
-from scipy.special import logsumexp
-from scipy.optimize import fmin_l_bfgs_b
 from sklearn import datasets
 
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.decomposition import PCA as cheatPCA
-import test
-
 from plotting import plot_scree, plot_hist, confusion_matrix, plot_dims, accuracy, error_rate
-from classifiers import MVG
+from classifiers import MVG, LogisticRegression, SVM
 
 
 class DrModel(ABC):
@@ -89,77 +83,6 @@ class LDA(DrModel):
 
     def transform(self, data: np.ndarray) -> np.ndarray:
         return np.dot(data, self.eig_vectors)
-
-
-class SVM:
-    _duality_gap: float
-    support_vectors: np.ndarray
-    alpha_z_sv: np.ndarray
-
-    def __init__(self, C: float, kernel=None):
-        self.C = C
-        if kernel is None:
-            self.kernel = lambda X_1, X_2: SVM.linear_kernel(X_1, X_2, 1)
-
-    def fit(self, data: np.ndarray, labels: np.ndarray):
-
-        (N, D) = data.shape
-        z = labels * 2 - 1
-        self.H = self.kernel(data, data) * np.outer(z, z)
-
-        alpha, t, _ = fmin_l_bfgs_b(self.obj_func, x0=np.zeros((N,)), bounds=[(0, self.C)] * N, factr=1)
-
-        eps = 1e-9
-        self.support_vectors = data[alpha > eps, :]
-        self.alpha_z_sv = alpha[alpha > eps] * labels[alpha > eps]
-
-
-        K=1
-        x_hat = np.append(data, values=np.ones((data.shape[0], 1)) * K, axis=1)
-        self.H_hat = self.kernel(x_hat, x_hat) * np.outer(z, z)
-        alpha_hat, t, _ = fmin_l_bfgs_b(self.obj_func, x0=np.zeros((N,)), bounds=[(0, self.C)] * N, factr=1)
-        w_hat = (alpha * z).T @ x_hat
-        self.w_hat = w_hat[:D]
-        self.b_hat = w_hat[D]
-        print(self.b_hat)
-
-        primal = 1 / 2 * w_hat.T @ w_hat + self.C * np.sum(
-            [np.max([0, 1 - z[i] * w_hat.T @ x_hat[i, :]]) for i in range(N)])
-        dual = -self.obj_func(alpha)[0]
-        self._duality_gap = primal - dual
-
-    def obj_func(self, alpha):
-        loss = 1 / 2 * alpha.T @ self.H @ alpha - sum(alpha)
-        delta_loss = self.H @ alpha - 1
-        return loss, delta_loss
-
-    def obj_func_hat(self, alpha):
-        loss = 1 / 2 * alpha.T @ self.H_hat @ alpha - sum(alpha)
-        delta_loss = self.H @ alpha - 1
-        return loss, delta_loss
-
-    def predict(self, data):
-        predictions = np.zeros((data.shape[0],), dtype=np.int32)
-        predictions[self.kernel(data, self.support_vectors) @ self.alpha_z_sv + self.b_hat > 0] = 1
-        return predictions
-
-    def predict_hat(self, data):
-        predictions = np.zeros((data.shape[0],), dtype=np.int32)
-        predictions[data @ self.w_hat + self.b_hat > 0] = 1
-        return predictions
-
-    @staticmethod
-    def linear_kernel(X_1: np.ndarray, X_2: np.ndarray, K: float) -> np.ndarray:
-        return X_1 @ X_2.T + K**2
-
-    @staticmethod
-    def polynomial_kernel(X:np.ndarray, c: float, d: float) -> np.ndarray:
-        return ((X @ X.T) + c) ** d
-
-    @staticmethod
-    def polynomial_kernel(X:np.ndarray, g: float) -> np.ndarray:
-        distance_squared = X
-        return np.exp(-g * 0)
 
 
 def read_data(path: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -272,23 +195,24 @@ if __name__ == '__main__':
     # plot_dims(data_train, labels_train)
 
     # get lower dimensional representation using principal component analysis
-    # pca_components = 5
+    # pca_components = 7
     # pca_model = PCA(pca_components)
     # pca_model.fit(data_train)
-    # pca_data = pca_model.transform(data_train)
+    # pca_data_train = pca_model.transform(data_train)
+    # pca_data_test = pca_model.transform(data_test)
 
     # plot_scree(pca_model.eig_values)
     # print(f'PCA explained variance: {pca_model.explained_variance:.2f}')
-    # plot_dims(pca_data, labels_train)
+    # plot_dims(pca_data_train, labels_train)
 
     # get lower dimensional representation using linear discriminant analysis
-    # lda_components = 3
+    # lda_components = 7
     # lda_model = LDA(lda_components)
     # lda_model.fit(data_train, labels_train)
     # lda_data_train = lda_model.transform(data_train)
     # lda_data_test = lda_model.transform(data_test)
 
-    # plot_dims(lda_data, labels_train)
+    # plot_dims(lda_data_train, labels_train)
 
     # predict classes using multivariate gaussian classifier
     # mvg_model = MVG()
@@ -311,14 +235,14 @@ if __name__ == '__main__':
     # print(f'Logistic Regression error rate:{error_rate(labels_test, predicted):.3f}')
 
     # classify data using SVM
-    svm_model = SVM(1)
-    svm_data = svm_model.fit(data_train, labels_train)
-    predicted = svm_model.predict_hat(data_train)
+    # svm_model = SVM(1, SVM.GaussianKernel(0.1, 0))
+    # svm_data = svm_model.fit(lda_data_train, labels_train)
+    # predicted = svm_model.predict(lda_data_test)
 
     # plot_dims(data_train, predicted)
-    print(f'SVM confusion matrix:\n{confusion_matrix(labels_train, predicted)}')
-    print(f'SVM accuracy: {accuracy(labels_train, predicted):.3f}')
-    print(f'SVM error rate:{error_rate(labels_train, predicted):.3f}')
+    # print(f'SVM confusion matrix:\n{confusion_matrix(labels_test, predicted)}')
+    # print(f'SVM accuracy: {accuracy(labels_test, predicted):.3f}')
+    # print(f'SVM error rate:{error_rate(labels_test, predicted):.3f}')
 
     # k = 5
     # cross_accuracy, cross_error = cross_validation(model=SVM(10, 10),
@@ -329,4 +253,4 @@ if __name__ == '__main__':
     # print(f'{k}-fold cross validation resulting average {cross_accuracy:.2f} accuracy and {cross_error:.2f} error')
 
     # eval_dims = [3, 7]
-    # run_configurations(data_train, labels_train, eval_dims, eval_dims, SVM(1), 5)
+    # run_configurations(data_train, labels_train, eval_dims, eval_dims, SVM(C=1, kernel=SVM.GaussianKernel(0.1, 0)), 5)
